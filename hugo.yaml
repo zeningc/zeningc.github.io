@@ -1,8 +1,40 @@
-baseURL: https://example.org/
+baseURL: http://localhost:1313/
 languageCode: en-us
-title: My New Hugo Site
+title: Zening's Blog
 theme: ["PaperMod"]
 caches:
   images:
     dir: :cacheDir/images
+
+# Parameters configuration
+params:
+  # Author information
+  author:
+    name: "Zening Chen"
+    bio: "Software Engineer at Uber, Yale MSCS graduate, former Oracle SDE & Intel SDE Intern, UESTC undergrad"
+    location: "Sunnyvale, CA"
+  
+  # Social icons configuration
+  socialIcons:
+    - name: github
+      url: https://github.com/zeningc
+      title: GitHub
+    - name: linkedin
+      url: https://www.linkedin.com/in/zening99/
+      title: LinkedIn
+    - name: leetcode
+      url: https://leetcode.com/u/zeningc/
+      title: LeetCode
+
+# Menu configuration
+menu:
+  main:
+    - identifier: about
+      name: About
+      url: /about/
+      weight: 10
+    - identifier: posts
+      name: Posts
+      url: /posts/
+      weight: 20
 
