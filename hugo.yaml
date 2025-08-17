@@ -8,12 +8,6 @@ caches:
 
 # Parameters configuration
 params:
-  # Author information
-  author:
-    name: "Zening Chen"
-    bio: "Software Engineer at Uber, Yale MSCS graduate, former Oracle SDE & Intel SDE Intern, UESTC undergrad"
-    location: "Sunnyvale, CA"
-  
   # Social icons configuration
   socialIcons:
     - name: github
