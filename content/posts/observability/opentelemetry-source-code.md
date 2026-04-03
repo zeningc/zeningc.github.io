@@ -1,5 +1,5 @@
 ---
-title: "Understanding OpenTelemetry Collector: A Source Code Walkthrough"
+title: "Understanding OpenTelemetry Collector: A Source Code Walkthrough (Part 1)"
 date: 2026-04-02
 ---
 
