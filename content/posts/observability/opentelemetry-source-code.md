@@ -1,3 +1,8 @@
+---
+title: "Understanding OpenTelemetry Collector: A Source Code Walkthrough"
+date: 2026-04-02
+---
+
 > Spent some time asking Claude to walk me through the Observe-Agent repo this weekend, which is extending the original OpenTelemetry Collector. I managed to figure out some core concepts of OpenTelemetry and wanted to share them here.
 
 ## Basic Concept
