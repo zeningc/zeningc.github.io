@@ -10,6 +10,8 @@ caches:
 params:
   disableSpecial1stPost: true
   # Social icons configuration
+  # Show "English" / "中文" in the header language switch instead of "En" / "Zh"
+  displayFullLangName: true
   socialIcons:
     - name: github
       url: https://github.com/zeningc
@@ -21,17 +23,42 @@ params:
       url: https://leetcode.com/u/zeningc/
       title: LeetCode
 
-# Menu configuration
-menu:
-  main:
-    - identifier: about
-      name: About
-      url: /about/
-      weight: 10
-    - identifier: posts
-      name: Posts
-      url: /posts/
-      weight: 20
+# Languages: English at the site root, Chinese under /zh/.
+# A translation is a sibling file with a language suffix, e.g. about.md + about.zh.md.
+defaultContentLanguage: en
+defaultContentLanguageInSubdir: false
+hasCJKLanguage: true
+languages:
+  en:
+    languageName: English
+    languageCode: en-us
+    title: Zening's Blog
+    weight: 1
+    menu:
+      main:
+        - identifier: about
+          name: About
+          url: /about/
+          weight: 10
+        - identifier: posts
+          name: Posts
+          url: /posts/
+          weight: 20
+  zh:
+    languageName: 中文
+    languageCode: zh-cn
+    title: Zening 的博客
+    weight: 2
+    menu:
+      main:
+        - identifier: about
+          name: 关于
+          url: /about/
+          weight: 10
+        - identifier: posts
+          name: 文章
+          url: /posts/
+          weight: 20
 
 
 # Math: keep $...$ / $$...$$ untouched by Markdown so KaTeX can render them

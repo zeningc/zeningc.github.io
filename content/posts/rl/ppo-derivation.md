@@ -1,105 +1,105 @@
 ---
-title: '从 MDP 到 PPO：手推笔记'
+title: 'From MDP to PPO: Deriving It by Hand'
 date: '2026-11-11T00:00:00-07:00'
 draft: false
 math: true
 tags: ['reinforcement-learning', 'ppo']
-summary: '从强化学习最基本的定义出发，一步步推到 PPO 的 clip 目标函数，并说明每一步证明了什么。'
+summary: 'Starting from the most basic definitions in reinforcement learning and deriving, step by step, the PPO clipped objective — with what each step proves.'
 ---
 
-本笔记按推导顺序整理：从强化学习最基本的定义出发，一路推到 PPO 的 clip 目标函数。每一步列出**结论**、**证明了什么**、**为什么需要它**，以及推导时容易犯的错误。
+These notes follow the order of the derivation: starting from the most basic definitions in reinforcement learning and ending at PPO's clipped objective. For each step they list the **result**, **what it proves**, **why we need it**, and the mistakes that are easy to make along the way.
 
-## 路线图
+## Roadmap
 
-| 阶段 | 内容 | 产出 |
+| Stage | Topic | Output |
 |---|---|---|
-| 0 | 基本定义 | 轨迹概率、回报、$V$/$Q$/$A$、$\delta_t$ |
-| 1 | 目标函数 | $J(\theta)$ |
-| 2 | 策略梯度 | $\nabla J=\mathbb{E}[\nabla\log\pi\cdot A]$ |
-| 3 | 重要性采样 | 比值 $\rho_t(\theta)$ |
-| 4 | 替代目标 | $L^{\text{CPI}}=\mathbb{E}[\rho\hat A]$ |
-| 5 | Clip | $L^{\text{CLIP}}$ |
+| 0 | Basic definitions | Trajectory probability, return, $V$/$Q$/$A$, $\delta_t$ |
+| 1 | Objective | $J(\theta)$ |
+| 2 | Policy gradient | $\nabla J=\mathbb{E}[\nabla\log\pi\cdot A]$ |
+| 3 | Importance sampling | Ratio $\rho_t(\theta)$ |
+| 4 | Surrogate objective | $L^{\text{CPI}}=\mathbb{E}[\rho\hat A]$ |
+| 5 | Clipping | $L^{\text{CLIP}}$ |
 
 ---
 
-## 第 0 阶段：基本定义
+## Stage 0: Basic Definitions
 
-### 0.1 MDP 与轨迹概率
+### 0.1 MDP and Trajectory Probability
 
-MDP 由 $(\mathcal S,\mathcal A,P,r,\gamma)$ 描述：
+An MDP is described by $(\mathcal S,\mathcal A,P,r,\gamma)$:
 
-- $P(s'\mid s,a)$：环境的状态转移概率；
-- $r(s,a)$：奖励函数，下文记 $r_t=r(s_t,a_t)$；
-- $\gamma\in[0,1)$：折扣因子。
+- $P(s'\mid s,a)$: the environment's state-transition probability;
+- $r(s,a)$: the reward function; below we write $r_t=r(s_t,a_t)$;
+- $\gamma\in[0,1)$: the discount factor.
 
-每一步：$a_t\sim\pi_\theta(\cdot\mid s_t)$，$s_{t+1}\sim P(\cdot\mid s_t,a_t)$。由马尔可夫性，一条轨迹的概率是
+At each step: $a_t\sim\pi_\theta(\cdot\mid s_t)$, $s_{t+1}\sim P(\cdot\mid s_t,a_t)$. By the Markov property, the probability of a trajectory is
 
 $$
 p_\theta(\tau)=\rho_0(s_0)\prod_{t}\pi_\theta(a_t\mid s_t)\,P(s_{t+1}\mid s_t,a_t)
 $$
 
-**证明了什么：** 轨迹概率可以拆成"初始分布 × 策略 × 环境转移"的连乘。
+**What it proves:** a trajectory's probability factors into "initial distribution × policy × environment transitions".
 
-**为什么需要：** 三项中**只有 $\pi_\theta$ 依赖 $\theta$**。第 2 阶段取对数再求梯度时，$\rho_0$ 和 $P$ 都会消失，因此策略梯度不需要环境模型。
+**Why we need it:** of the three factors, **only $\pi_\theta$ depends on $\theta$**. When we take the log and differentiate in Stage 2, $\rho_0$ and $P$ drop out, so the policy gradient does not require a model of the environment.
 
-> 易错：把 $P(s_0,a_0)$ 当成一项。$s_0$ 来自环境的初始分布 $\rho_0$，$a_0$ 来自策略，两者要分开写。
+> Common mistake: treating $P(s_0,a_0)$ as a single factor. $s_0$ comes from the environment's initial distribution $\rho_0$ and $a_0$ comes from the policy; write them separately.
 
-### 0.2 回报
+### 0.2 Return
 
 $$
 G_t=\sum_{k\ge0}\gamma^k r_{t+k},\qquad G_t=r_t+\gamma G_{t+1}
 $$
 
-若 $|r_t|\le R_{\max}$，由三角不等式和等比级数 $\sum_k\gamma^k=\frac1{1-\gamma}$：
+If $|r_t|\le R_{\max}$, then by the triangle inequality and the geometric series $\sum_k\gamma^k=\frac1{1-\gamma}$:
 
 $$
 |G_t|\le\sum_k\gamma^k|r_{t+k}|\le\frac{R_{\max}}{1-\gamma}
 $$
 
-**证明了什么：** 回报满足一步递推；只要 $\gamma<1$，回报就有界。
+**What it proves:** the return satisfies a one-step recursion, and as long as $\gamma<1$ it is bounded.
 
-**为什么需要：** 递推式是 Bellman 方程的来源；有界性保证 $V$ 和 $Q$ 是有限的数。$\frac1{1-\gamma}$ 称为**有效视野**，$\gamma=0.99$ 时约为 100 步。
+**Why we need it:** the recursion is where the Bellman equation comes from; boundedness guarantees that $V$ and $Q$ are finite numbers. $\frac1{1-\gamma}$ is called the **effective horizon**: about 100 steps for $\gamma=0.99$.
 
-> 易错：递推写成 $G_t=\gamma G_{t+1}$，漏掉当前奖励 $r_t$。
+> Common mistake: writing the recursion as $G_t=\gamma G_{t+1}$ and dropping the current reward $r_t$.
 
-**补充：等比级数。** 部分和 $S_n=1+\gamma+\dots+\gamma^{n-1}$，两边乘 $\gamma$ 再相减得 $S_n=\frac{1-\gamma^n}{1-\gamma}$。当 $0\le\gamma<1$ 时 $\gamma^n\to0$，所以无穷和收敛到 $\frac1{1-\gamma}$；当 $\gamma\ge1$ 时发散。
+**Aside: the geometric series.** For the partial sum $S_n=1+\gamma+\dots+\gamma^{n-1}$, multiply both sides by $\gamma$ and subtract to get $S_n=\frac{1-\gamma^n}{1-\gamma}$. When $0\le\gamma<1$, $\gamma^n\to0$, so the infinite sum converges to $\frac1{1-\gamma}$; when $\gamma\ge1$ it diverges.
 
-### 0.3 价值函数的定义
+### 0.3 Defining the Value Functions
 
-$G_t$ 是随机变量，评价一个状态或动作要对它取条件期望：
+$G_t$ is a random variable, so to evaluate a state or an action we take a conditional expectation:
 
 $$
 V^\pi(s)=\mathbb{E}_\pi[G_t\mid s_t=s],\qquad Q^\pi(s,a)=\mathbb{E}_\pi[G_t\mid s_t=s,a_t=a]
 $$
 
-竖线右边是**固定的**量，下标 $\pi$ 表示**之后**的动作按 $\pi$ 采样。
+What is to the right of the bar is **held fixed**; the subscript $\pi$ means that **subsequent** actions are sampled from $\pi$.
 
-| | 被平均掉的随机变量 |
+| | Random variables averaged out |
 |---|---|
 | $V^\pi(s)$ | $a_t,\ s_{t+1},\ a_{t+1},\ \dots$ |
 | $Q^\pi(s,a)$ | $s_{t+1},\ a_{t+1},\ \dots$ |
 
-**证明了什么：** $V$ 和 $Q$ 只差当前这一步动作 $a_t$ 的随机性。
+**What it proves:** $V$ and $Q$ differ only in the randomness of the current action $a_t$.
 
-> 易错：把 $Q$ 的下标写成 $a_t\sim\pi$。$a_t$ 已经被固定，不再随机。
+> Common mistake: writing the subscript of $Q$ as $a_t\sim\pi$. $a_t$ is already fixed and is no longer random.
 
-### 0.4 $V$ 与 $Q$ 的两座桥
+### 0.4 Two Bridges Between $V$ and $Q$
 
-工具：**全期望公式** $\mathbb{E}[X\mid Y]=\sum_z P(z\mid Y)\,\mathbb{E}[X\mid Y,z]$。
+Tool: the **law of total expectation**, $\mathbb{E}[X\mid Y]=\sum_z P(z\mid Y)\,\mathbb{E}[X\mid Y,z]$.
 
-- 对 $V$ 取 $z=a_t$：
+- For $V$, take $z=a_t$:
 
 $$
 V^\pi(s)=\sum_a\pi(a\mid s)\,Q^\pi(s,a)
 $$
 
-- 对 $Q$ 代入 $G_t=r_t+\gamma G_{t+1}$，再取 $z=s_{t+1}$，并用马尔可夫性去掉多余的条件：
+- For $Q$, substitute $G_t=r_t+\gamma G_{t+1}$, take $z=s_{t+1}$, and use the Markov property to drop the extra conditions:
 
 $$
 Q^\pi(s,a)=r(s,a)+\gamma\sum_{s'}P(s'\mid s,a)\,V^\pi(s')
 $$
 
-**证明了什么：** $V$ 是 $Q$ 对动作的平均；$Q$ 是即时奖励加上 $V$ 对下一状态的平均。两式互相代入即得 Bellman 方程：
+**What it proves:** $V$ is the average of $Q$ over actions; $Q$ is the immediate reward plus the average of $V$ over next states. Substituting one into the other gives the Bellman equations:
 
 $$
 V^\pi(s)=\sum_a\pi(a\mid s)\Big[r(s,a)+\gamma\sum_{s'}P(s'\mid s,a)V^\pi(s')\Big]
@@ -109,129 +109,129 @@ $$
 Q^\pi(s,a)=r(s,a)+\gamma\sum_{s'}P(s'\mid s,a)\sum_{a'}\pi(a'\mid s')Q^\pi(s',a')
 $$
 
-> 易错：
-> - 漏掉 $\gamma$；
-> - 右边写 $V^\pi(s)$ 而非 $V^\pi(s')$；
-> - 写 $Q=r+\gamma V(s_{t+1})$ 而没有对 $s'$ 求和。左边是确定的数，右边不能留随机量；
-> - 用 $P(a\mid s)$ 表示策略。策略写 $\pi$，环境写 $P$，两者在求梯度时处理方式不同。
+> Common mistakes:
+> - dropping $\gamma$;
+> - writing $V^\pi(s)$ on the right-hand side instead of $V^\pi(s')$;
+> - writing $Q=r+\gamma V(s_{t+1})$ without summing over $s'$. The left side is a fixed number, so the right side cannot contain a random quantity;
+> - using $P(a\mid s)$ for the policy. Write $\pi$ for the policy and $P$ for the environment; they are treated differently when we take gradients.
 
-### 0.5 优势函数与 TD 误差
+### 0.5 Advantage and TD Error
 
 $$
 A^\pi(s,a)=Q^\pi(s,a)-V^\pi(s)
 $$
 
-**结论 1：**
+**Result 1:**
 
 $$
 \mathbb{E}_{a\sim\pi}[A^\pi(s,a)]=\sum_a\pi(a\mid s)Q^\pi(s,a)-V^\pi(s)=0
 $$
 
-**证明了什么：** 优势是相对于策略平均水平的**相对量**，按 $\pi$ 平均为零，所以总有一些动作优于平均、一些劣于平均。$A>0$ 应增大 $\pi(a\mid s)$，$A<0$ 应减小。
+**What it proves:** the advantage is a **relative** quantity — measured against the policy's own average — and it averages to zero under $\pi$. So some actions are always better than average and some worse. If $A>0$ we should increase $\pi(a\mid s)$; if $A<0$, decrease it.
 
-**结论 2：** 定义 $\delta_t=r_t+\gamma V^\pi(s_{t+1})-V^\pi(s_t)$，则
+**Result 2:** define $\delta_t=r_t+\gamma V^\pi(s_{t+1})-V^\pi(s_t)$. Then
 
 $$
 \mathbb{E}[\delta_t\mid s_t,a_t]=r+\gamma\sum_{s'}P(s'\mid s,a)V^\pi(s')-V^\pi(s)=Q^\pi-V^\pi=A^\pi(s_t,a_t)
 $$
 
-（把常数放进对 $s'$ 的求和，用到 $\sum_{s'}P(s'\mid s,a)=1$。）
+(Moving the constants inside the sum over $s'$ uses $\sum_{s'}P(s'\mid s,a)=1$.)
 
-**证明了什么：** 只需一步采样 $(s_t,a_t,r_t,s_{t+1})$ 和一个 $V$ 网络，就能得到 $A^\pi$ 的**无偏估计**（前提是 $V$ 准确）。
+**What it proves:** with a single transition $(s_t,a_t,r_t,s_{t+1})$ and a $V$ network, we get an **unbiased estimate** of $A^\pi$ (assuming $V$ is exact).
 
-**为什么需要：** $\delta_t$ 是 PPO 中 GAE 的基本单元。
+**Why we need it:** $\delta_t$ is the building block of GAE in PPO.
 
-**补充：两个概念。**
-- **哑变量：** 只在求和号内部起作用的变量，换名字不改变结果，例如 $\sum_a\pi(a\mid s)Q(s,a)=\sum_{a'}\pi(a'\mid s)Q(s,a')$。
-- **无偏 vs 一致：** 无偏指 $\mathbb{E}[\hat X]=X$，对单个样本就成立；一致指样本越多平均值越接近真值。无偏样本取平均会收敛到真值；有偏估计即使收敛，也会收敛到错误的值。例如 $V$ 学得不准时，$\delta_t$ 就有系统偏差。
+**Aside: two concepts.**
+- **Dummy variable:** a variable that only lives inside a summation; renaming it does not change the result, e.g. $\sum_a\pi(a\mid s)Q(s,a)=\sum_{a'}\pi(a'\mid s)Q(s,a')$.
+- **Unbiased vs. consistent:** unbiased means $\mathbb{E}[\hat X]=X$, which holds even for a single sample; consistent means the sample average approaches the true value as samples grow. Averaging unbiased samples converges to the true value; a biased estimator may still converge, but to the wrong value. For example, when $V$ is inaccurate, $\delta_t$ has a systematic bias.
 
 ---
 
-## 第 1 阶段：目标函数
+## Stage 1: The Objective
 
 $$
 J(\theta)=\sum_{s_0}\rho_0(s_0)\,V^{\pi_\theta}(s_0)=\mathbb{E}_{\tau\sim p_\theta}[R(\tau)]=\sum_\tau p_\theta(\tau)\,R(\tau)
 $$
 
-其中 $R(\tau)=\sum_k\gamma^k r(s_k,a_k)=G_0$。
+where $R(\tau)=\sum_k\gamma^k r(s_k,a_k)=G_0$.
 
-**关键观察：** $\theta$ 只出现在**采样分布** $p_\theta(\tau)$ 中，$R(\tau)$ 本身不依赖 $\theta$。所以对 $J$ 求导时，导数落在分布上，这正是第 2 阶段要解决的困难。
+**Key observation:** $\theta$ appears only in the **sampling distribution** $p_\theta(\tau)$; $R(\tau)$ itself does not depend on $\theta$. So when we differentiate $J$, the derivative lands on the distribution — exactly the difficulty Stage 2 has to solve.
 
-> 易错：把初始分布写成 $\rho_\theta(s_0)$。初始分布由环境决定，与 $\theta$ 无关。
+> Common mistake: writing the initial distribution as $\rho_\theta(s_0)$. The initial distribution is set by the environment and does not depend on $\theta$.
 
 ---
 
-## 第 2 阶段：策略梯度
+## Stage 2: The Policy Gradient
 
-### 2.1 对数导数技巧与 REINFORCE
+### 2.1 The Log-Derivative Trick and REINFORCE
 
-直接求导得 $\nabla J=\sum_\tau\nabla p_\theta(\tau)R(\tau)$，它不再是期望，无法用采样估计。
+Differentiating directly gives $\nabla J=\sum_\tau\nabla p_\theta(\tau)R(\tau)$, which is no longer an expectation and cannot be estimated by sampling.
 
-**恒等式：** $\nabla\log f=\frac{\nabla f}{f}$，所以 $\nabla p_\theta=p_\theta\nabla\log p_\theta$。代入得
+**Identity:** $\nabla\log f=\frac{\nabla f}{f}$, so $\nabla p_\theta=p_\theta\nabla\log p_\theta$. Substituting:
 
 $$
 \nabla_\theta J=\mathbb{E}_{\tau\sim p_\theta}\big[\nabla_\theta\log p_\theta(\tau)\,R(\tau)\big]
 $$
 
-取对数把连乘变连加：
+Taking the log turns the product into a sum:
 
 $$
 \log p_\theta(\tau)=\log\rho_0(s_0)+\sum_t\log\pi_\theta(a_t\mid s_t)+\sum_t\log P(s_{t+1}\mid s_t,a_t)
 $$
 
-第一、三项与 $\theta$ 无关，导数为 0：
+The first and third terms do not depend on $\theta$, so their gradients are zero:
 
 $$
 \boxed{\nabla_\theta J=\mathbb{E}\Big[\sum_t\nabla_\theta\log\pi_\theta(a_t\mid s_t)\cdot R(\tau)\Big]}
 $$
 
-**证明了什么：** 对分布的求导可以重新写回期望，从而**用采样估计梯度**；环境转移 $P$ 被消掉，**不需要环境模型**。
+**What it proves:** the derivative of a distribution can be rewritten as an expectation, so the gradient **can be estimated by sampling**; the environment transitions $P$ cancel out, so **no environment model is needed**.
 
-> 易错：拆开连乘时只给第一项加 $\log$。$\log$ 作用在每一项上，结果是 $\nabla\log\pi$，不是 $\nabla\pi$。
+> Common mistake: applying $\log$ only to the first factor when splitting the product. The $\log$ applies to every factor, so the result is $\nabla\log\pi$, not $\nabla\pi$.
 
-### 2.2 核心引理
+### 2.2 The Key Lemma
 
 $$
 \mathbb{E}_{a\sim\pi_\theta}[\nabla_\theta\log\pi_\theta(a\mid s)]=\sum_a\pi_\theta\frac{\nabla\pi_\theta}{\pi_\theta}=\sum_a\nabla\pi_\theta=\nabla\sum_a\pi_\theta(a\mid s)=\nabla1=0
 $$
 
-**证明了什么：** 所有动作概率的变化量之和为零。
+**What it proves:** the changes in all action probabilities sum to zero.
 
-**为什么需要：** 后面所有"某一项可以去掉而不改变梯度期望"的论证都依赖它。
+**Why we need it:** every later argument of the form "this term can be dropped without changing the expected gradient" relies on it.
 
-### 2.3 基线
+### 2.3 Baselines
 
-对任意只依赖状态的 $b(s_t)$：
+For any $b(s_t)$ that depends only on the state:
 
 $$
 \mathbb{E}_{s_t,a_t}\big[\nabla\log\pi_\theta(a_t\mid s_t)\,b(s_t)\big]=\mathbb{E}_{s_t}\Big[b(s_t)\cdot\underbrace{\mathbb{E}_{a_t}[\nabla\log\pi_\theta(a_t\mid s_t)]}_{=0}\Big]=0
 $$
 
-**证明了什么：** 从回报中减去任何**不依赖 $a_t$** 的函数，梯度期望不变，但方差可以显著降低。取 $b=V^\pi(s_t)$ 效果很好，因为它是 $G_t$ 在 $s_t$ 下的平均值，减掉后剩下的量围绕 0 波动。
+**What it proves:** subtracting any function that **does not depend on $a_t$** from the return leaves the expected gradient unchanged, while it can reduce variance substantially. $b=V^\pi(s_t)$ works well because it is the average of $G_t$ given $s_t$, so what remains fluctuates around zero.
 
-> 易错：把 $\nabla\log\pi\cdot b$ 当成 $\nabla\log(\pi b)$。$b$ 乘在外面，不进入 $\log$。
+> Common mistake: reading $\nabla\log\pi\cdot b$ as $\nabla\log(\pi b)$. $b$ multiplies from the outside; it does not go inside the $\log$.
 
-### 2.4 因果性
+### 2.4 Causality
 
-$a_t$ 之前的奖励只取决于 $a_{<t}$ 和 $s_{\le t}$，对 $a_t$ 来说已经确定，作用和基线一样，贡献的梯度期望为零。所以
+Rewards earned before $a_t$ depend only on $a_{<t}$ and $s_{\le t}$; from $a_t$'s point of view they are already fixed and act like a baseline, so their contribution to the expected gradient is zero. Therefore
 
 $$
 R(\tau)\ \longrightarrow\ \sum_{k\ge t}\gamma^k r_k=\gamma^t G_t
 $$
 
-（$\gamma^t$ 因子实践中通常省略。）
+(The $\gamma^t$ factor is usually dropped in practice.)
 
-**证明了什么：** 去掉了与 $a_t$ 无关的噪声。这是 2.3 的特例，用的是同一个引理。
+**What it proves:** it removes noise that is unrelated to $a_t$. It is a special case of 2.3 and uses the same lemma.
 
-### 2.5 带优势的策略梯度
+### 2.5 The Policy Gradient with Advantages
 
-三步替换，每一步期望都不变：
+Three substitutions, each leaving the expectation unchanged:
 
 $$
-R(\tau)\ \xrightarrow{2.4}\ G_t\ \xrightarrow{2.3,\ b=V}\ G_t-V^\pi(s_t)\ \xrightarrow{\text{全期望}}\ A^\pi(s_t,a_t)
+R(\tau)\ \xrightarrow{2.4}\ G_t\ \xrightarrow{2.3,\ b=V}\ G_t-V^\pi(s_t)\ \xrightarrow{\text{total exp.}}\ A^\pi(s_t,a_t)
 $$
 
-最后一步的依据：$\mathbb{E}[f(X)\,Y]=\mathbb{E}_X\big[f(X)\,\mathbb{E}[Y\mid X]\big]$。取 $X=(s_t,a_t)$，$f=\nabla\log\pi_\theta(a_t\mid s_t)$ 只依赖 $X$，可以提出内层期望：
+The justification for the last step: $\mathbb{E}[f(X)\,Y]=\mathbb{E}_X\big[f(X)\,\mathbb{E}[Y\mid X]\big]$. Take $X=(s_t,a_t)$; since $f=\nabla\log\pi_\theta(a_t\mid s_t)$ depends only on $X$, it can be pulled out of the inner expectation:
 
 $$
 \mathbb{E}[G_t-V^\pi(s_t)\mid s_t,a_t]=Q^\pi(s_t,a_t)-V^\pi(s_t)=A^\pi(s_t,a_t)
@@ -241,37 +241,37 @@ $$
 \boxed{\nabla_\theta J=\mathbb{E}\Big[\sum_t\nabla_\theta\log\pi_\theta(a_t\mid s_t)\cdot A^\pi(s_t,a_t)\Big]}
 $$
 
-**证明了什么：** 策略梯度可以写成"对数概率的梯度 × 优势"。三种形式期望相同，噪声依次减小：
+**What it proves:** the policy gradient can be written as "gradient of log-probability × advantage". All three forms have the same expectation, with decreasing noise:
 
-| 形式 | 乘的是 | 噪声 |
+| Form | Multiplier | Noise |
 |---|---|---|
-| REINFORCE | $R(\tau)$ | 最大 |
-| 加基线 | $G_t-V$（一次采样） | 中等 |
-| 优势 | $A^\pi$（精确平均） | 最小，但需要估计 |
+| REINFORCE | $R(\tau)$ | Highest |
+| With baseline | $G_t-V$ (one sample) | Medium |
+| Advantage | $A^\pi$ (exact average) | Lowest, but must be estimated |
 
-**成立条件：** 条件里必须包含前面因子所依赖的**全部**变量。若因子换成 $\nabla\log\pi_\theta(a_{t+1}\mid s_{t+1})$，就要固定 $(s_t,a_t,s_{t+1},a_{t+1})$，此时条件期望是 $r_t+\gamma Q^\pi(s_{t+1},a_{t+1})$，不再是 $Q^\pi(s_t,a_t)$。
+**When it holds:** the conditioning must include **every** variable the leading factor depends on. If the factor were $\nabla\log\pi_\theta(a_{t+1}\mid s_{t+1})$, we would have to fix $(s_t,a_t,s_{t+1},a_{t+1})$, and the conditional expectation would be $r_t+\gamma Q^\pi(s_{t+1},a_{t+1})$ rather than $Q^\pi(s_t,a_t)$.
 
-> 易错：展开 $G_t=r_t+\gamma G_{t+1}$ 后认为 $G_{t+1}$、$V(s_{t+1})$ 与 $a_t$ 无关。$s_{t+1}\sim P(\cdot\mid s_t,a_t)$ 由当前动作决定。若真如此，梯度只依赖即时奖励；在 CartPole 中每步奖励都是 1，梯度会恒为零，策略什么也学不到。
+> Common mistake: expanding $G_t=r_t+\gamma G_{t+1}$ and concluding that $G_{t+1}$ and $V(s_{t+1})$ do not depend on $a_t$. $s_{t+1}\sim P(\cdot\mid s_t,a_t)$ is determined by the current action. If that conclusion were true, the gradient would depend only on immediate rewards; in CartPole every step's reward is 1, so the gradient would be identically zero and the policy would learn nothing.
 
 ---
 
-## 第 3 阶段：重要性采样
+## Stage 3: Importance Sampling
 
-### 3.1 动机
+### 3.1 Motivation
 
-上面的期望要求样本来自**当前**策略 $\pi_\theta$。每更新一步，旧数据就失效，采样代价太高。我们希望用旧策略 $\pi_{\theta_{\text{old}}}$ 采一批数据，然后连续更新多步。
+The expectation above requires samples from the **current** policy $\pi_\theta$. After every update the old data becomes stale, and sampling is expensive. We would like to collect a batch with the old policy $\pi_{\theta_{\text{old}}}$ and then take several update steps on it.
 
-### 3.2 重要性采样恒等式
+### 3.2 The Importance Sampling Identity
 
 $$
 \mathbb{E}_{x\sim p}[f(x)]=\sum_x q(x)\frac{p(x)}{q(x)}f(x)=\mathbb{E}_{x\sim q}\Big[\frac{p(x)}{q(x)}f(x)\Big]
 $$
 
-前提：$p(x)>0$ 时必须 $q(x)>0$。
+Requirement: whenever $p(x)>0$, we must have $q(x)>0$.
 
-### 3.3 应用到动作
+### 3.3 Applying It to Actions
 
-定义
+Define
 
 $$
 \rho_t(\theta)=\frac{\pi_\theta(a_t\mid s_t)}{\pi_{\theta_{\text{old}}}(a_t\mid s_t)}
@@ -281,87 +281,87 @@ $$
 \mathbb{E}_{a\sim\pi_\theta}[\nabla\log\pi_\theta\cdot A]=\mathbb{E}_{a\sim\pi_{\theta_{\text{old}}}}[\rho_t\,\nabla\log\pi_\theta\cdot A]
 $$
 
-且由于分母不依赖 $\theta$：
+and since the denominator does not depend on $\theta$:
 
 $$
 \rho_t\,\nabla_\theta\log\pi_\theta=\frac{\pi_\theta}{\pi_{\theta_{\text{old}}}}\cdot\frac{\nabla\pi_\theta}{\pi_\theta}=\nabla_\theta\rho_t
 $$
 
-**证明了什么：** 对动作分布的修正是**精确的**，并且梯度可以写成 $\nabla\rho_t\cdot A$。
+**What it proves:** the correction for the action distribution is **exact**, and the gradient can be written as $\nabla\rho_t\cdot A$.
 
-### 3.4 $\rho$ 的直觉与来历
+### 3.4 Where $\rho$ Comes From, Intuitively
 
-- **本意：样本重加权。** 新策略选 $a$ 的概率是旧策略的 2 倍，旧数据里 $a$ 就"少了一半"，每个样本应算 2 次。$\rho$ 是为了重用旧数据而**推导出来**的权重。
-- **副作用：度量策略变化。** $\rho=1$ 表示该样本上新旧策略一致；偏离 1 越多，变化越大。PPO 利用了这一点。
-- **历史顺序：** CPI（2002）引入 $\mathbb{E}[\rho\hat A]$，此时 $\rho$ 只是重要性权重 → TRPO（2015）用 KL 散度约束新旧策略的距离，需要二阶优化 → PPO（2017）直接限制目标函数中已有的 $\rho$，一阶优化即可。
-- **局限：** $\rho$ 只看被采样到的动作，KL 看整个动作分布。所以 clip 是一个粗略的信任区域，实践中还要监控 `approx_kl`。
-- **小性质：** $\mathbb{E}_{a\sim\pi_{\theta_{\text{old}}}}[\rho]=\sum_a\pi_\theta(a\mid s)=1$。
+- **Original purpose: reweighting samples.** If the new policy picks $a$ twice as often as the old one, then $a$ is "under-represented by half" in the old data, so each of its samples should count twice. $\rho$ is a weight **derived** from the need to reuse old data.
+- **Side effect: it measures how much the policy changed.** $\rho=1$ means the old and new policies agree on that sample; the further from 1, the bigger the change. PPO exploits this.
+- **Historical order:** CPI (2002) introduced $\mathbb{E}[\rho\hat A]$, where $\rho$ was just an importance weight → TRPO (2015) constrained the KL divergence between old and new policies, which needs second-order optimization → PPO (2017) directly limited the $\rho$ already present in the objective, so first-order optimization suffices.
+- **Limitation:** $\rho$ only looks at the sampled action, while KL looks at the whole action distribution. So clipping is a rough trust region, and in practice one also monitors `approx_kl`.
+- **A small property:** $\mathbb{E}_{a\sim\pi_{\theta_{\text{old}}}}[\rho]=\sum_a\pi_\theta(a\mid s)=1$.
 
-### 3.5 状态访问分布 $d^\pi$
+### 3.5 The State Visitation Distribution $d^\pi$
 
-把轨迹期望改写成对单个状态的期望：
+Rewrite the trajectory expectation as an expectation over individual states:
 
 $$
 \mathbb{E}_\tau\Big[\sum_t\gamma^t g(s_t)\Big]=\sum_s\Big[\sum_t\gamma^t\Pr(s_t=s)\Big]g(s)
 $$
 
-归一化后得到
+After normalization:
 
 $$
 d^\pi(s)=(1-\gamma)\sum_{t\ge0}\gamma^t\Pr(s_t=s\mid\pi)
 $$
 
-含义：按 $\pi$ 行动时，智能体有多大比例的时间处于 $s$。于是
+Meaning: when acting with $\pi$, the fraction of time the agent spends in $s$. Hence
 
 $$
 \nabla_\theta J=\frac1{1-\gamma}\,\mathbb{E}_{s\sim d^{\pi_\theta}}\,\mathbb{E}_{a\sim\pi_\theta}\big[\nabla\log\pi_\theta(a\mid s)\,A^{\pi_\theta}(s,a)\big]
 $$
 
-常数 $\frac1{1-\gamma}$ 可被学习率吸收。**$d^\pi$ 依赖策略**：CartPole 中好策略集中在杆子竖直的状态，差策略分散在歪斜的状态。训练时，**缓冲区里的状态就是 $d^{\pi_{\theta_{\text{old}}}}$ 的样本**。
+The constant $\frac1{1-\gamma}$ can be absorbed into the learning rate. **$d^\pi$ depends on the policy**: in CartPole, a good policy concentrates on upright-pole states, while a bad one spreads over tilted states. During training, **the states in the rollout buffer are samples from $d^{\pi_{\theta_{\text{old}}}}$**.
 
 ---
 
-## 第 4 阶段：替代目标
+## Stage 4: The Surrogate Objective
 
-### 4.1 从精确梯度到可计算的梯度
+### 4.1 From the Exact Gradient to a Computable One
 
-| 步骤 | 式子 | 精确？ |
+| Step | Expression | Exact? |
 |---|---|---|
-| 精确梯度 | $\mathbb{E}_{s\sim d^{\pi_\theta}}\mathbb{E}_{a\sim\pi_\theta}[\nabla\log\pi_\theta\cdot A^{\pi_\theta}]$ | — |
-| 动作重要性采样 | $\mathbb{E}_{s\sim d^{\pi_\theta}}\mathbb{E}_{a\sim\pi_{\theta_{\text{old}}}}[\nabla\rho\cdot A^{\pi_\theta}]$ | 精确 |
-| 状态换成旧分布 | $s\sim d^{\pi_\theta}\to d^{\pi_{\theta_{\text{old}}}}$ | **近似 ①**：只有旧策略访问过的状态 |
-| 优势换成旧估计 | $A^{\pi_\theta}\to\hat A\approx A^{\pi_{\theta_{\text{old}}}}$ | **近似 ②**：只能用旧回报估计 |
+| Exact gradient | $\mathbb{E}_{s\sim d^{\pi_\theta}}\mathbb{E}_{a\sim\pi_\theta}[\nabla\log\pi_\theta\cdot A^{\pi_\theta}]$ | — |
+| Importance sampling on actions | $\mathbb{E}_{s\sim d^{\pi_\theta}}\mathbb{E}_{a\sim\pi_{\theta_{\text{old}}}}[\nabla\rho\cdot A^{\pi_\theta}]$ | Exact |
+| Swap in the old state distribution | $s\sim d^{\pi_\theta}\to d^{\pi_{\theta_{\text{old}}}}$ | **Approximation ①**: we only have states visited by the old policy |
+| Swap in the old advantage | $A^{\pi_\theta}\to\hat A\approx A^{\pi_{\theta_{\text{old}}}}$ | **Approximation ②**: we can only estimate from old returns |
 
-两处近似在 $\theta=\theta_{\text{old}}$ 时都精确，$\theta$ 越远误差越大。
+Both approximations are exact at $\theta=\theta_{\text{old}}$; the further $\theta$ moves, the larger the error.
 
-- **近似 ① 的失效：** 新策略可能会去旧数据中几乎没有的状态，我们无法在那里评估它。
-- **近似 ② 的失效：** $A^{\pi_{\theta_{\text{old}}}}(s,a)$ 假设之后按旧策略行动，而实际执行的是新策略。
+- **When ① breaks:** the new policy may visit states that barely appear in the old data, where we cannot evaluate it.
+- **When ② breaks:** $A^{\pi_{\theta_{\text{old}}}}(s,a)$ assumes the old policy is followed afterwards, but the new policy is what actually runs.
 
-**更深一层（性能差异引理）：**
+**One level deeper (performance difference lemma):**
 
 $$
 J(\theta)-J(\theta_{\text{old}})=\frac1{1-\gamma}\,\mathbb{E}_{s\sim d^{\pi_\theta}}\,\mathbb{E}_{a\sim\pi_\theta}\big[A^{\pi_{\theta_{\text{old}}}}(s,a)\big]
 $$
 
-这是一个精确等式，里面出现的本来就是旧策略的优势。从这个角度看，真正的近似只有状态分布一处。
+This is an exact identity, and the advantage that appears in it is the old policy's. Seen this way, the only real approximation is the state distribution.
 
-此外，$\hat A$ 本身还有**估计噪声**（单次采样），它与策略变化无关，靠 GAE、增大批次、优势归一化来降低。
+Separately, $\hat A$ also carries **estimation noise** (it comes from a single sample). This is unrelated to how far the policy moved, and is reduced by GAE, larger batches, and advantage normalization.
 
-### 4.2 替代目标
+### 4.2 The Surrogate
 
-需要一个标量函数交给自动求导，使其梯度等于 $\mathbb{E}_{\pi_{\theta_{\text{old}}}}[\nabla\rho_t\cdot\hat A_t]$。因为 $\hat A_t$ 与 $\theta$ 无关、采样分布与 $\theta$ 无关，$\nabla$ 可以提到最外面：
+We need a scalar function to hand to autograd whose gradient equals $\mathbb{E}_{\pi_{\theta_{\text{old}}}}[\nabla\rho_t\cdot\hat A_t]$. Since $\hat A_t$ does not depend on $\theta$ and neither does the sampling distribution, $\nabla$ can be pulled all the way out:
 
 $$
 \boxed{L^{\text{CPI}}(\theta)=\mathbb{E}_{s,a\sim\pi_{\theta_{\text{old}}}}\big[\rho_t(\theta)\,\hat A_t\big]}
 $$
 
-批次形式：$L=\frac1N\sum_i\rho_i(\theta)\hat A_i$，代码为 `loss = -(ratio * adv).mean()`（取负号是因为优化器做最小化）。
+Batch form: $L=\frac1N\sum_i\rho_i(\theta)\hat A_i$; in code, `loss = -(ratio * adv).mean()` (negated because optimizers minimize).
 
-> 易错：写成 $L=\nabla\mathbb{E}[\dots]$。$L$ 是函数本身，$\nabla L$ 才是梯度。
+> Common mistake: writing $L=\nabla\mathbb{E}[\dots]$. $L$ is the function itself; $\nabla L$ is its gradient.
 
-### 4.3 在 $\theta_{\text{old}}$ 处梯度正确
+### 4.3 The Gradient Is Correct at $\theta_{\text{old}}$
 
-先求梯度再代值。$\rho_t(\theta_{\text{old}})=1$，但 $\nabla\rho_t\ne0$：
+Take the gradient first, then plug in the value. $\rho_t(\theta_{\text{old}})=1$, but $\nabla\rho_t\ne0$:
 
 $$
 \nabla\rho_t\Big|_{\theta_{\text{old}}}=\frac{\nabla\pi_\theta}{\pi_{\theta_{\text{old}}}}\Big|_{\theta_{\text{old}}}=\frac{\nabla\pi_\theta}{\pi_\theta}=\nabla\log\pi_\theta
@@ -371,32 +371,32 @@ $$
 \nabla L^{\text{CPI}}\Big|_{\theta_{\text{old}}}=\mathbb{E}_{\pi_{\theta_{\text{old}}}}[\nabla\log\pi_\theta\cdot\hat A_t]=\nabla J\Big|_{\theta_{\text{old}}}
 $$
 
-**证明了什么：** $L^{\text{CPI}}$ 和 $J$ 在 $\theta_{\text{old}}$ 处梯度相同，局部朝同一方向倾斜；但这个保证只在附近成立。
+**What it proves:** $L^{\text{CPI}}$ and $J$ have the same gradient at $\theta_{\text{old}}$, so locally they slope in the same direction; but this guarantee only holds nearby.
 
-### 4.4 无约束优化的问题
+### 4.4 The Problem with Unconstrained Optimization
 
-单个样本的贡献 $\rho\hat A$ 是关于 $\rho$ 的直线：
+A single sample's contribution $\rho\hat A$ is a straight line in $\rho$:
 
-- $\hat A>0$：优化器把 $\rho$ 一路推大，几乎没有上限（$\rho\le1/\pi_{\theta_{\text{old}}}$）；
-- $\hat A<0$：把 $\rho$ 推向 0。
+- $\hat A>0$: the optimizer keeps pushing $\rho$ up, with essentially no ceiling ($\rho\le1/\pi_{\theta_{\text{old}}}$);
+- $\hat A<0$: it pushes $\rho$ toward 0.
 
-后果：过拟合 $\hat A$ 的噪声；两处近似失效，$L$ 上升而 $J$ 下降；下一轮数据由变坏的策略采集，训练可能崩溃。
+Consequences: overfitting to the noise in $\hat A$; both approximations break down, so $L$ goes up while $J$ goes down; the next batch is collected by a policy that has already gotten worse, and training can collapse.
 
-**结论：** 必须限制每一轮中 $\rho$ 偏离 1 的幅度。
+**Conclusion:** we must limit how far $\rho$ can move away from 1 in each round.
 
 ---
 
-## 第 5 阶段：Clip
+## Stage 5: Clipping
 
-### 5.1 目标函数
+### 5.1 The Objective
 
 $$
 \boxed{L^{\text{CLIP}}(\theta)=\mathbb{E}_{s,a\sim\pi_{\theta_{\text{old}}}}\Big[\min\big(\rho_t\hat A_t,\ \text{clip}(\rho_t,1-\epsilon,1+\epsilon)\,\hat A_t\big)\Big]}
 $$
 
-### 5.2 数值验证（$\epsilon=0.2$）
+### 5.2 A Numerical Check ($\epsilon=0.2$)
 
-$\hat A=+2$：
+$\hat A=+2$:
 
 | $\rho$ | $\rho\hat A$ | $\text{clip}(\rho)\hat A$ | $\min$ |
 |---|---|---|---|
@@ -404,7 +404,7 @@ $\hat A=+2$：
 | 1.0 | 2 | 2 | 2 |
 | 1.5 | 3 | 2.4 | 2.4 |
 
-$\hat A=-2$：
+$\hat A=-2$:
 
 | $\rho$ | $\rho\hat A$ | $\text{clip}(\rho)\hat A$ | $\min$ |
 |---|---|---|---|
@@ -412,64 +412,64 @@ $\hat A=-2$：
 | 1.0 | −2 | −2 | −2 |
 | 1.5 | −3 | −2.4 | −3 |
 
-### 5.3 图像形状
+### 5.3 Shape of the Curve
 
-- $\hat A>0$：$\rho\le1+\epsilon$ 时为斜率 $\hat A$ 的直线，之后水平。
-- $\hat A<0$：$\rho<1-\epsilon$ 时水平（高度 $(1-\epsilon)\hat A$），之后为斜率 $\hat A$ 的直线，一路向下。
+- $\hat A>0$: for $\rho\le1+\epsilon$ it is a line with slope $\hat A$; beyond that it is flat.
+- $\hat A<0$: for $\rho<1-\epsilon$ it is flat (at height $(1-\epsilon)\hat A$); beyond that it is a line with slope $\hat A$, heading down without bound.
 
-> 易错：设计时让函数在 $1+\epsilon$ 处跌到 0。这会惩罚已经在区间外的点，并且函数不连续。正确做法是保持水平，梯度为 0。
+> Common mistake: designing the function to drop to 0 at $1+\epsilon$. That penalizes points already outside the interval and makes the function discontinuous. The right choice is to stay flat, so the gradient is 0.
 
-### 5.4 梯度表
+### 5.4 The Gradient Table
 
 | $\partial/\partial\rho$ | $\rho<1-\epsilon$ | $[1-\epsilon,1+\epsilon]$ | $\rho>1+\epsilon$ |
 |---|---|---|---|
-| $\hat A>0$ | $\hat A$（可以纠正） | $\hat A$ | $0$（截断） |
-| $\hat A<0$ | $0$（截断） | $\hat A$ | $\hat A$（可以纠正） |
+| $\hat A>0$ | $\hat A$ (can be corrected) | $\hat A$ | $0$ (clipped) |
+| $\hat A<0$ | $0$ (clipped) | $\hat A$ | $\hat A$ (can be corrected) |
 
-**证明了什么：** clip 只截断"**朝改进方向**走得太远"的那一侧；如果 $\rho$ 被推到了错误的一侧，梯度保留，可以拉回来。
+**What it proves:** clipping only cuts off the side where the update has gone **too far in the direction of improvement**; if $\rho$ has been pushed to the wrong side, the gradient is kept so it can be pulled back.
 
-### 5.5 为什么要取 $\min$
+### 5.5 Why Take the $\min$
 
-只用 $\text{clip}(\rho)\hat A$ 时，两端都是水平的。以 $\hat A>0$、$\rho=0.5$ 为例：只用 clip 时梯度为 0，错误无法纠正；取 $\min$ 时落在 $\rho\hat A$ 上，梯度为 $\hat A$，会被拉回。
+Using only $\text{clip}(\rho)\hat A$, both ends are flat. Take $\hat A>0$, $\rho=0.5$: with clip alone the gradient is 0 and the mistake cannot be corrected; with the $\min$ we land on $\rho\hat A$, the gradient is $\hat A$, and it gets pulled back.
 
-### 5.6 悲观下界
+### 5.6 A Pessimistic Lower Bound
 
-$\min(x,y)\le x$，所以
+Since $\min(x,y)\le x$,
 
 $$
-L^{\text{CLIP}}(\theta)\le L^{\text{CPI}}(\theta),\quad\text{当 }\rho\in[1-\epsilon,1+\epsilon]\text{ 时相等}
+L^{\text{CLIP}}(\theta)\le L^{\text{CPI}}(\theta),\quad\text{with equality when }\rho\in[1-\epsilon,1+\epsilon]
 $$
 
-**证明了什么：** $L^{\text{CLIP}}$ 是 $L^{\text{CPI}}$ 的**悲观下界**：超出信任区域的收益不计入，损失全额计入。在 $\theta_{\text{old}}$ 处两者的值和梯度都相同，所以 4.3 的结论仍然成立。
+**What it proves:** $L^{\text{CLIP}}$ is a **pessimistic lower bound** on $L^{\text{CPI}}$: gains beyond the trust region are not counted, while losses are counted in full. At $\theta_{\text{old}}$ the two have the same value and gradient, so the conclusion of 4.3 still holds.
 
 ---
 
-## 总结
+## Summary
 
-| 阶段 | 结果 | 解决的问题 |
+| Stage | Result | Problem it solves |
 |---|---|---|
-| 0 | $V,Q,A,\delta_t$ | 定义好坏；一步采样即可估计优势 |
-| 1 | $J(\theta)=\mathbb{E}_\tau[R]$ | 用一个标量衡量策略 |
-| 2 | $\nabla J=\mathbb{E}[\nabla\log\pi\cdot A]$ | 无需环境模型的梯度；基线降方差 |
-| 3 | $\rho_t$ | 用旧数据估计新策略的梯度 |
-| 4 | $L^{\text{CPI}}=\mathbb{E}[\rho\hat A]$ | 可交给自动求导的目标，但只在局部可信 |
-| 5 | clip + min | 限制每轮更新幅度，用悲观下界保证稳定 |
+| 0 | $V,Q,A,\delta_t$ | Defines "good" and "bad"; one transition suffices to estimate the advantage |
+| 1 | $J(\theta)=\mathbb{E}_\tau[R]$ | Measures a policy with one scalar |
+| 2 | $\nabla J=\mathbb{E}[\nabla\log\pi\cdot A]$ | A model-free gradient; baselines reduce variance |
+| 3 | $\rho_t$ | Estimates the new policy's gradient from old data |
+| 4 | $L^{\text{CPI}}=\mathbb{E}[\rho\hat A]$ | An objective autograd can use, but only trustworthy locally |
+| 5 | clip + min | Limits each round's update; a pessimistic lower bound keeps it stable |
 
-### 与代码的对应（典型 PyTorch 实现）
+### Mapping to Code (a typical PyTorch implementation)
 
-| 代码 | 公式 |
+| Code | Formula |
 |---|---|
-| `delta = reward + gamma * next_value - value` | $\delta_t$（0.5） |
-| `gae = delta + gamma * lam * ... * gae` | GAE 估计 $\hat A_t$ |
-| 优势归一化 `(adv - mean) / std` | 减常数基线不改变梯度期望（2.3） |
-| `ratio = exp(new_log_probs - old_log_probs)` | $\rho_t$（3.3） |
-| `surr1 = ratio * adv`，`surr2 = clamp(ratio, 1-eps, 1+eps) * adv` | min 中的两项（5.1） |
-| `approx_kl` | 监控 $\rho$ 之外的真实 KL（3.4） |
-| `clip_fraction` | 落在梯度表"0"格子里的样本比例（5.4） |
-| `value_loss` | 训练 $V$，因为 $\delta_t$ 需要准确的 $V$ |
-| `entropy` | 鼓励探索（不属于策略梯度推导） |
+| `delta = reward + gamma * next_value - value` | $\delta_t$ (0.5) |
+| `gae = delta + gamma * lam * ... * gae` | GAE estimate of $\hat A_t$ |
+| Advantage normalization `(adv - mean) / std` | Subtracting a constant baseline leaves the expected gradient unchanged (2.3) |
+| `ratio = exp(new_log_probs - old_log_probs)` | $\rho_t$ (3.3) |
+| `surr1 = ratio * adv`, `surr2 = clamp(ratio, 1-eps, 1+eps) * adv` | The two terms inside the min (5.1) |
+| `approx_kl` | Monitors the actual KL beyond what $\rho$ captures (3.4) |
+| `clip_fraction` | Fraction of samples landing in the "0" cells of the gradient table (5.4) |
+| `value_loss` | Trains $V$, since $\delta_t$ needs an accurate $V$ |
+| `entropy` | Encourages exploration (not part of the policy-gradient derivation) |
 
-### 可继续推导
+### Further Derivations
 
-1. **GAE：** 证明 $\hat A_t^{\text{GAE}}=\sum_l(\gamma\lambda)^l\delta_{t+l}$ 在 $\lambda=0$ 时为 $\delta_t$，在 $\lambda=1$ 时为 $G_t-V(s_t)$，并解释偏差–方差权衡。
-2. **性能差异引理：** 证明 4.1 中的等式，说明为什么使用旧策略的优势是合理的。
+1. **GAE:** show that $\hat A_t^{\text{GAE}}=\sum_l(\gamma\lambda)^l\delta_{t+l}$ reduces to $\delta_t$ at $\lambda=0$ and to $G_t-V(s_t)$ at $\lambda=1$, and explain the bias–variance trade-off.
+2. **Performance difference lemma:** prove the identity in 4.1, which explains why using the old policy's advantage is justified.
