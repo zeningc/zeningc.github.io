@@ -33,3 +33,17 @@ menu:
       url: /posts/
       weight: 20
 
+
+# Math: keep $...$ / $$...$$ untouched by Markdown so KaTeX can render them
+markup:
+  goldmark:
+    extensions:
+      passthrough:
+        enable: true
+        delimiters:
+          block:
+            - ['$$', '$$']
+            - ['\[', '\]']
+          inline:
+            - ['$', '$']
+            - ['\(', '\)']
