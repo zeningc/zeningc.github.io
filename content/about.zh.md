@@ -6,11 +6,11 @@ draft: false
 
 ## Zening Chen
 
-**Uber 软件工程师** | **加州 Sunnyvale**
+**Snowflake 软件工程师** | **加州 Menlo Park**
 
 ### 背景
 
-我目前在 Uber 担任软件工程师。硕士毕业于耶鲁大学计算机科学专业（MSCS），本科就读于电子科技大学（UESTC），期间曾在 Intel 担任软件开发实习生，之后在 Oracle 担任软件开发工程师。
+我目前在 Snowflake 担任软件工程师，此前曾在 Uber 工作，也曾在 Oracle 担任软件开发工程师。硕士毕业于耶鲁大学计算机科学专业（MSCS），本科就读于电子科技大学（UESTC），期间曾在 Intel 担任软件开发实习生。
 
 ### 关于这个博客
 

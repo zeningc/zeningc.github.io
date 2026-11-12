@@ -6,11 +6,11 @@ draft: false
 
 ## Zening Chen
 
-**Software Engineer at Uber** | **Sunnyvale, CA**
+**Software Engineer at Snowflake** | **Menlo Park, CA**
 
 ### Background
 
-I'm a software engineer currently working at Uber. I graduated with an MSCS from Yale University and have worked as an SDE at Oracle and as an SDE Intern at Intel during my undergraduate studies at UESTC.
+I'm a software engineer currently working at Snowflake. Before that, I worked at Uber and as an SDE at Oracle. I graduated with an MSCS from Yale University, and interned as an SDE at Intel during my undergraduate studies at UESTC.
 
 ### This Blog
 
